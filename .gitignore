@@ -1,0 +1,26 @@
+# [Oh My Gemini] Patterns
+.omg/
+
+# Python cache
+**/__pycache__/
+_pycache_/
+
+# Local application data & caches
+company/
+$null
+.env
+*.log
+app_log/
+app_log.log
+
+# Development & Planning artifacts
+PRD_MultiAgentTransition.md
+test_agent.py
+test_gemini.py
+test_subprocess.py
+test_tempfile.py
+verify_agents.py
+
+# CLI Output
+output.txt
+stream.txt

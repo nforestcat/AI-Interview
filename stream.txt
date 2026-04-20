@@ -1,4 +1,0 @@
-{"type":"init","timestamp":"2026-04-20T02:14:03.077Z","session_id":"649f81e4-e44a-4cbc-b246-03345cf27f02","model":"auto-gemini-3"}
-{"type":"message","timestamp":"2026-04-20T02:14:03.077Z","role":"user","content":"Count to 3"}
-{"type":"message","timestamp":"2026-04-20T02:14:07.101Z","role":"assistant","content":"1\n2\n3","delta":true}
-{"type":"result","timestamp":"2026-04-20T02:14:07.497Z","status":"success","stats":{"total_tokens":12189,"input_tokens":11972,"output_tokens":34,"cached":0,"input":11972,"duration_ms":4420,"tool_calls":0,"models":{"gemini-2.5-flash-lite":{"total_tokens":1328,"input_tokens":1261,"output_tokens":29,"cached":0,"input":1261},"gemini-3-flash-preview":{"total_tokens":10861,"input_tokens":10711,"output_tokens":5,"cached":0,"input":10711}}}}
