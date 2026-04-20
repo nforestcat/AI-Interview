@@ -1,0 +1,12 @@
+{
+  "last_session_id": "c5e014ca-57be-47f1-9e64-5f8b692d4f68",
+  "last_event_key": "c5e014ca-57be-47f1-9e64-5f8b692d4f68:transcript:abab752b36a00366d0b41e74033467f479ab7463a65178ae4161d56280417764",
+  "last_prompted_session_id": "",
+  "last_reason": "short-session",
+  "last_prompted_at": "",
+  "last_user_message_count": 1,
+  "last_actionable_message_count": 0,
+  "deep_interview_lock_active": false,
+  "deep_interview_lock_source": "D:\\gemini\\interview\\AI-Interview\\.omg\\state\\deep-interview.json",
+  "updated_at": "2026-04-20T04:58:48.072Z"
+}

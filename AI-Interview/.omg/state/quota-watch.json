@@ -1,0 +1,19 @@
+{
+  "turn_count": 1,
+  "last_session_id": "c5e014ca-57be-47f1-9e64-5f8b692d4f68",
+  "last_event_key": "c5e014ca-57be-47f1-9e64-5f8b692d4f68:transcript:abab752b36a00366d0b41e74033467f479ab7463a65178ae4161d56280417764",
+  "last_transcript_hash": "abab752b36a00366d0b41e74033467f479ab7463a65178ae4161d56280417764",
+  "last_model": "gemini-3-flash-preview",
+  "last_provider": "gemini",
+  "last_turn_total_tokens": 12997,
+  "last_session_total_tokens": 12997,
+  "session_totals_by_model": {
+    "gemini-3-flash-preview": 12997
+  },
+  "session_totals_by_provider": {
+    "gemini": 12997
+  },
+  "cwd_mode": "parent-leaf",
+  "last_cwd_label": "interview/AI-Interview",
+  "updated_at": "2026-04-20T04:58:48.084Z"
+}

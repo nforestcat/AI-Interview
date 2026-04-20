@@ -1,0 +1,12 @@
+{
+  "last_session_id": "aca2bb31-59fd-4e36-aed8-55901f7c5538",
+  "last_event_key": "aca2bb31-59fd-4e36-aed8-55901f7c5538:transcript:5a36984a12b7d0338b17ef641e6345dcfc27ea835fd712d5a546223db5e4ce36",
+  "last_prompted_session_id": "aca2bb31-59fd-4e36-aed8-55901f7c5538",
+  "last_reason": "already-prompted-this-session",
+  "last_prompted_at": "2026-04-20T01:24:35.525Z",
+  "last_user_message_count": 37,
+  "last_actionable_message_count": 8,
+  "deep_interview_lock_active": false,
+  "deep_interview_lock_source": "D:\\gemini\\interview\\.omg\\state\\deep-interview.json",
+  "updated_at": "2026-04-20T04:57:23.148Z"
+}
