@@ -175,8 +175,11 @@ with st.sidebar:
         cache_manager = CacheManager()
         # Search용 모델은 gemma-4-26b-a4b-it 사용
         search_utils = SearchUtils(client, model_name='gemma-4-26b-a4b-it')
-        # 메인 면접 및 분석 모델은 gemma-4-31b-it 사용
-        engine = InterviewEngine(model_name='gemma-4-31b-it', session_id=st.session_state.session_id, api_key=api_key)
+        
+        # LangGraph Engine 초기화 및 상태 유지
+        if "engine" not in st.session_state:
+            st.session_state.engine = InterviewEngine(model_name='gemma-4-31b-it', session_id=st.session_state.session_id, api_key=api_key)
+        engine = st.session_state.engine
     else:
         st.warning("API Key를 입력해주세요.")
         st.stop()
@@ -202,6 +205,8 @@ with st.sidebar:
             st.error("기업명을 입력해주세요.")
 
     if st.button("세션 초기화", type="secondary"):
+        if "engine" in st.session_state:
+            st.session_state.engine.clear()
         st.session_state.chat_history = []
         st.session_state.pre_analysis = ""
         st.session_state.current_interviewer = None
@@ -280,32 +285,44 @@ with col_left:
         # 면접 시작 진행 상태일 때 실행
         if st.session_state.get("is_starting_interview", False):
             with st.spinner("첫 질문을 준비 중입니다..."):
-                res = engine.get_next_question(
-                    st.session_state.chat_history,
-                    st.session_state.parsed_resume,
-                    st.session_state.company_info,
-                    current_count=st.session_state.interviewer_question_count
-                )
+                # LangGraph 엔진에 컨텍스트 주입
+                engine.set_context(st.session_state.parsed_resume, st.session_state.company_info)
+                # 첫 질문 생성 (input 없이 step 호출)
+                res = engine.step()
+                
                 st.session_state.current_interviewer = res['interviewer']
-                st.session_state.interviewer_question_count = res['count']
-                st.session_state.chat_history.append({"role": "assistant", "content": res['question'], "name": res['interviewer']})
+                st.session_state.chat_history = engine.state["messages"]
+                
             st.session_state.is_interview_started = True
             st.session_state.is_starting_interview = False
             save_current_session()
             st.rerun()
 
     for msg in st.session_state.chat_history:
+        role = msg.get("role")
         name = msg.get("name", "지원자")
-        with st.chat_message(msg["role"]):
-            if msg["role"] == "assistant":
+        with st.chat_message(role):
+            if role == "assistant":
                 st.markdown(f"**[{name}]**")
             st.write(msg["content"])
 
     if st.session_state.is_interview_started and not st.session_state.is_finished:
         if user_input := st.chat_input("답변을 입력하세요..."):
-            st.session_state.chat_history.append({"role": "user", "content": user_input})
-            # 사용자가 답변할 때마다 총 질문 횟수 증가
-            st.session_state.total_question_count += 1
+            with st.spinner("분석 및 다음 질문 준비 중..."):
+                # 사용자 답변 주입 및 다음 단계 실행
+                res = engine.step(user_input)
+                
+                st.session_state.current_interviewer = res['interviewer']
+                st.session_state.chat_history = engine.state["messages"]
+                st.session_state.total_question_count = engine.state["total_count"]
+                
+                # 분석 결과 가져오기 (Analyst 노드 결과)
+                st.session_state.feedback_data = engine.get_feedback()
+                
+                if res.get('is_final'):
+                    st.session_state.is_finished = True
+                    st.session_state.is_generating_report = True
+
             save_current_session()
             st.rerun()
     elif st.session_state.is_finished:
@@ -315,101 +332,7 @@ with col_left:
 with col_right:
     st.header("📊 실시간 피드백 및 분석")
     
-    # 마지막 질문과 답변이 있는 경우 피드백 생성
-    if st.session_state.is_interview_started and not st.session_state.is_finished and st.session_state.chat_history and st.session_state.chat_history[-1]["role"] == "user":
-        user_answer = st.session_state.chat_history[-1]["content"]
-        
-        # 이전 질문 찾기
-        last_question = ""
-        for i in range(len(st.session_state.chat_history)-2, -1, -1):
-            if st.session_state.chat_history[i]["role"] == "assistant":
-                last_question = st.session_state.chat_history[i]["content"]
-                break
-        
-        st.subheader("💡 AI Analyst 분석 중...")
-        feedback_placeholder = st.empty()
-        
-        full_feedback_text = ""
-        # 프로그레스 바 추가
-        progress_bar = st.progress(0, text="답변 분석 중...")
-        
-        # New streaming feedback from AnalystAgent
-        for i, chunk in enumerate(engine.get_feedback_stream(
-            last_question, 
-            user_answer, 
-            st.session_state.parsed_resume, 
-            st.session_state.company_info
-        )):
-            full_feedback_text += chunk
-            feedback_placeholder.markdown(f"```json\n{full_feedback_text}\n```")
-            progress_bar.progress(min(i * 2, 95), text="데이터 수신 중...")
-        
-        progress_bar.progress(100, text="분석 완료!")
-        st.session_state.feedback_data = engine.parse_json_response(full_feedback_text)
-        
-        # 피드백 완료 후 다음 질문(또는 종료 멘트) 생성
-        with st.status("면접관이 다음 단계를 준비 중입니다...", expanded=True) as status:
-            res = engine.get_next_question(
-                st.session_state.chat_history,
-                st.session_state.parsed_resume,
-                st.session_state.company_info,
-                current_interviewer=st.session_state.current_interviewer,
-                current_count=st.session_state.interviewer_question_count,
-                total_count=st.session_state.total_question_count
-            )
-            st.session_state.current_interviewer = res['interviewer']
-            st.session_state.interviewer_question_count = res['count']
-            st.session_state.chat_history.append({"role": "assistant", "content": res['question'], "name": res['interviewer']})
-            
-            # AI가 종료 신호를 보냈다면 역질문 대기 상태로 전환
-            if res.get('is_final'):
-                st.session_state.is_awaiting_reverse_question = True
-                status.update(label="마무리 멘트 준비 완료!", state="complete", expanded=False)
-            else:
-                status.update(label="다음 질문 준비 완료!", state="complete", expanded=False)
-        
-        # 만약 방금 답변이 마지막 역질문이었다면 완전히 종료
-        if st.session_state.is_awaiting_reverse_question and len(st.session_state.chat_history) > 0 and st.session_state.chat_history[-1]["role"] == "user":
-             # 역질문에 대한 피드백까지 완료된 시점이므로 종료
-             if st.session_state.total_question_count > 6: # 종료 멘트 이후의 입력임
-                st.session_state.is_finished = True
-                st.session_state.is_awaiting_reverse_question = False
-                st.session_state.is_generating_report = True # 리포트 생성 시작
-        
-        save_current_session()
-        st.rerun()
-
-    # --- [Final Report Generation] ---
-    if st.session_state.is_generating_report and not st.session_state.final_report:
-        with st.spinner("채용 위원장이 최종 평가 리포트를 작성 중입니다. 잠시만 기다려 주세요..."):
-            try:
-                report = engine.generate_final_report(
-                    st.session_state.chat_history,
-                    st.session_state.parsed_resume,
-                    st.session_state.company_info
-                )
-                st.session_state.final_report = report
-                st.session_state.is_generating_report = False
-                save_current_session()
-                st.rerun()
-            except Exception as e:
-                st.error(f"리포트 생성 중 오류 발생: {e}")
-                st.session_state.is_generating_report = False
-
-    # 최종 리포트가 있으면 화면 하단에 표시
-    if st.session_state.final_report:
-        st.divider()
-        st.header("🏆 최종 면접 평가 리포트")
-        st.markdown(st.session_state.final_report)
-        
-        # 다운로드 버튼 (간단 구현)
-        st.download_button(
-            label="📄 리포트 다운로드 (Markdown)",
-            data=st.session_state.final_report,
-            file_name=f"Interview_Report_{st.session_state.session_id}.md",
-            mime="text/markdown"
-        )
-    
+    # LangGraph에서는 engine.step() 내부에서 분석이 완료됨
     if st.session_state.feedback_data:
         data = st.session_state.feedback_data
         if "error" in data:
