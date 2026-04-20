@@ -159,21 +159,24 @@ with st.sidebar:
     st.progress(progress_val, text=f"전체 준비도: {progress_val}%")
     st.divider()
 
-    # .env에서 기존 키 로드
-    existing_api_key = os.getenv("GEMINI_API_KEY", "")
-    api_key = st.text_input("Gemini API Key", value=existing_api_key, type="password")
+    # .env에서 기존 키 로드 (GOOGLE_API_KEY 표준 사용)
+    existing_api_key = os.getenv("GOOGLE_API_KEY", "")
+    api_key = st.text_input("Google Gemini API Key", value=existing_api_key, type="password")
     
     # API 키가 변경되었거나 새로 입력된 경우 .env에 저장
     if api_key and api_key != existing_api_key:
-        set_key(env_path, "GEMINI_API_KEY", api_key)
-        os.environ["GEMINI_API_KEY"] = api_key
+        set_key(env_path, "GOOGLE_API_KEY", api_key)
+        os.environ["GOOGLE_API_KEY"] = api_key
         st.success("API Key가 .env 파일에 저장되었습니다.")
     
     if api_key:
-        client = Client(api_key=api_key, http_options={'api_version': 'v1alpha'})
+        # Client initialization
+        client = Client(api_key=api_key)
         cache_manager = CacheManager()
+        # Search용 모델은 gemma-4-26b-a4b-it 사용
         search_utils = SearchUtils(client, model_name='gemma-4-26b-a4b-it')
-        engine = InterviewEngine(session_id=st.session_state.session_id)
+        # 메인 면접 및 분석 모델은 gemma-4-31b-it 사용
+        engine = InterviewEngine(model_name='gemma-4-31b-it', session_id=st.session_state.session_id, api_key=api_key)
     else:
         st.warning("API Key를 입력해주세요.")
         st.stop()

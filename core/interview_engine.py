@@ -4,6 +4,7 @@ import os
 import random
 import time
 from typing import List, Dict, Any, Generator
+from google import genai
 from core.logger import get_logger
 from prompts.templates import (
     TECH_INTERVIEWER_PROMPT, 
@@ -20,16 +21,20 @@ from agents.base_agent import BaseAgent
 logger = get_logger("InterviewEngine")
 
 class InterviewEngine:
-    def __init__(self, model_name=None, session_id=None):
-        self.model_name = model_name
+    def __init__(self, model_name="gemma-4-31b-it", session_id=None, api_key=None):
+        self.model_name = model_name or "gemma-4-31b-it"
         self.session_id = session_id or f"interview_{int(time.time())}"
         self.analyst_session_id = f"analyst_{self.session_id}"
         
-        # Initialize specialized agents
-        self.tech_agent = TechAgent(self.session_id)
-        self.hr_agent = HRAgent(self.session_id)
-        self.exec_agent = ExecAgent(self.session_id)
-        self.analyst_agent = AnalystAgent(self.analyst_session_id)
+        # Initialize GenAI Client
+        self.api_key = api_key or os.environ.get("GOOGLE_API_KEY")
+        self.client = genai.Client(api_key=self.api_key)
+        
+        # Initialize specialized agents with shared client
+        self.tech_agent = TechAgent(self.session_id, model=self.model_name, client=self.client)
+        self.hr_agent = HRAgent(self.session_id, model=self.model_name, client=self.client)
+        self.exec_agent = ExecAgent(self.session_id, model=self.model_name, client=self.client)
+        self.analyst_agent = AnalystAgent(self.analyst_session_id, model=self.model_name, client=self.client)
         
         self.agent_map = {
             "Agent_Tech": self.tech_agent,
@@ -54,7 +59,9 @@ class InterviewEngine:
         parser_agent = BaseAgent(
             agent_name="Agent_Parser", 
             session_id=f"parser_{int(time.time())}", 
-            intent="Extracting and structuring resume data into pure JSON format."
+            intent="Extracting and structuring resume data into pure JSON format.",
+            model=self.model_name,
+            client=self.client
         )
         output = parser_agent.ask(prompt)
 
@@ -76,7 +83,9 @@ class InterviewEngine:
         analysis_agent = BaseAgent(
             agent_name="Agent_Tech", 
             session_id=temp_session, 
-            intent="Initial Interview Preparation & Question Pooling"
+            intent="Initial Interview Preparation & Question Pooling",
+            model=self.model_name,
+            client=self.client
         )
 
         prompt = f"""
@@ -264,7 +273,9 @@ class InterviewEngine:
         final_agent = BaseAgent(
             agent_name="Head_of_Recruiting",
             session_id=f"final_{int(time.time())}",
-            intent="Final Interview Evaluation & Report Generation"
+            intent="Final Interview Evaluation & Report Generation",
+            model=self.model_name,
+            client=self.client
         )
         
         return final_agent.ask(prompt)
