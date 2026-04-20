@@ -103,6 +103,18 @@ if "is_analyzing" not in st.session_state:
     st.session_state.is_analyzing = False
 if "is_starting_interview" not in st.session_state:
     st.session_state.is_starting_interview = False
+if "interviewer_question_count" not in st.session_state:
+    st.session_state.interviewer_question_count = 0
+if "total_question_count" not in st.session_state:
+    st.session_state.total_question_count = 0
+if "is_finished" not in st.session_state:
+    st.session_state.is_finished = False
+if "is_awaiting_reverse_question" not in st.session_state:
+    st.session_state.is_awaiting_reverse_question = False
+if "final_report" not in st.session_state:
+    st.session_state.final_report = ""
+if "is_generating_report" not in st.session_state:
+    st.session_state.is_generating_report = False
 
 def save_current_session():
     """현재 세션 상태를 파일에 저장합니다."""
@@ -114,6 +126,11 @@ def save_current_session():
         "parsed_resume": st.session_state.parsed_resume,
         "pre_analysis": st.session_state.pre_analysis,
         "current_interviewer": st.session_state.current_interviewer,
+        "interviewer_question_count": st.session_state.interviewer_question_count,
+        "total_question_count": st.session_state.total_question_count,
+        "is_finished": st.session_state.is_finished,
+        "is_awaiting_reverse_question": st.session_state.is_awaiting_reverse_question,
+        "final_report": st.session_state.final_report,
         "feedback_data": st.session_state.feedback_data,
         "is_interview_started": st.session_state.is_interview_started
     }
@@ -263,9 +280,11 @@ with col_left:
                 res = engine.get_next_question(
                     st.session_state.chat_history,
                     st.session_state.parsed_resume,
-                    st.session_state.company_info
+                    st.session_state.company_info,
+                    current_count=st.session_state.interviewer_question_count
                 )
                 st.session_state.current_interviewer = res['interviewer']
+                st.session_state.interviewer_question_count = res['count']
                 st.session_state.chat_history.append({"role": "assistant", "content": res['question'], "name": res['interviewer']})
             st.session_state.is_interview_started = True
             st.session_state.is_starting_interview = False
@@ -279,20 +298,22 @@ with col_left:
                 st.markdown(f"**[{name}]**")
             st.write(msg["content"])
 
-    if st.session_state.is_interview_started:
+    if st.session_state.is_interview_started and not st.session_state.is_finished:
         if user_input := st.chat_input("답변을 입력하세요..."):
             st.session_state.chat_history.append({"role": "user", "content": user_input})
+            # 사용자가 답변할 때마다 총 질문 횟수 증가
+            st.session_state.total_question_count += 1
             save_current_session()
-            # 여기서 즉시 피드백 및 다음 질문 생성을 처리하지 않고 rerun하여
-            # UI에 사용자 답변이 먼저 보이게 함. col_right에서 실제 처리를 수행.
             st.rerun()
+    elif st.session_state.is_finished:
+        st.chat_input("면접이 종료되었습니다.", disabled=True)
 
 # --- [Column Right] 실시간 분석 및 교정 ---
 with col_right:
     st.header("📊 실시간 피드백 및 분석")
     
     # 마지막 질문과 답변이 있는 경우 피드백 생성
-    if st.session_state.is_interview_started and st.session_state.chat_history and st.session_state.chat_history[-1]["role"] == "user":
+    if st.session_state.is_interview_started and not st.session_state.is_finished and st.session_state.chat_history and st.session_state.chat_history[-1]["role"] == "user":
         user_answer = st.session_state.chat_history[-1]["content"]
         
         # 이전 질문 찾기
@@ -317,70 +338,152 @@ with col_right:
             st.session_state.company_info
         )):
             full_feedback_text += chunk
-            # Show raw JSON or cleaned up version in real-time
             feedback_placeholder.markdown(f"```json\n{full_feedback_text}\n```")
             progress_bar.progress(min(i * 2, 95), text="데이터 수신 중...")
         
         progress_bar.progress(100, text="분석 완료!")
-        
-        # JSON 파싱 시도 (InterviewEngine의 정규식 기반 파서 활용)
         st.session_state.feedback_data = engine.parse_json_response(full_feedback_text)
         
-        # 피드백 완료 후 다음 질문 생성
-        with st.status("면접관이 다음 질문을 준비 중입니다...", expanded=True) as status:
+        # 피드백 완료 후 다음 질문(또는 종료 멘트) 생성
+        with st.status("면접관이 다음 단계를 준비 중입니다...", expanded=True) as status:
             res = engine.get_next_question(
                 st.session_state.chat_history,
                 st.session_state.parsed_resume,
                 st.session_state.company_info,
-                current_interviewer=st.session_state.current_interviewer
+                current_interviewer=st.session_state.current_interviewer,
+                current_count=st.session_state.interviewer_question_count,
+                total_count=st.session_state.total_question_count
             )
             st.session_state.current_interviewer = res['interviewer']
+            st.session_state.interviewer_question_count = res['count']
             st.session_state.chat_history.append({"role": "assistant", "content": res['question'], "name": res['interviewer']})
-            status.update(label="질문 준비 완료!", state="complete", expanded=False)
+            
+            # AI가 종료 신호를 보냈다면 역질문 대기 상태로 전환
+            if res.get('is_final'):
+                st.session_state.is_awaiting_reverse_question = True
+                status.update(label="마무리 멘트 준비 완료!", state="complete", expanded=False)
+            else:
+                status.update(label="다음 질문 준비 완료!", state="complete", expanded=False)
+        
+        # 만약 방금 답변이 마지막 역질문이었다면 완전히 종료
+        if st.session_state.is_awaiting_reverse_question and len(st.session_state.chat_history) > 0 and st.session_state.chat_history[-1]["role"] == "user":
+             # 역질문에 대한 피드백까지 완료된 시점이므로 종료
+             if st.session_state.total_question_count > 6: # 종료 멘트 이후의 입력임
+                st.session_state.is_finished = True
+                st.session_state.is_awaiting_reverse_question = False
+                st.session_state.is_generating_report = True # 리포트 생성 시작
         
         save_current_session()
         st.rerun()
+
+    # --- [Final Report Generation] ---
+    if st.session_state.is_generating_report and not st.session_state.final_report:
+        with st.spinner("채용 위원장이 최종 평가 리포트를 작성 중입니다. 잠시만 기다려 주세요..."):
+            try:
+                report = engine.generate_final_report(
+                    st.session_state.chat_history,
+                    st.session_state.parsed_resume,
+                    st.session_state.company_info
+                )
+                st.session_state.final_report = report
+                st.session_state.is_generating_report = False
+                save_current_session()
+                st.rerun()
+            except Exception as e:
+                st.error(f"리포트 생성 중 오류 발생: {e}")
+                st.session_state.is_generating_report = False
+
+    # 최종 리포트가 있으면 화면 하단에 표시
+    if st.session_state.final_report:
+        st.divider()
+        st.header("🏆 최종 면접 평가 리포트")
+        st.markdown(st.session_state.final_report)
+        
+        # 다운로드 버튼 (간단 구현)
+        st.download_button(
+            label="📄 리포트 다운로드 (Markdown)",
+            data=st.session_state.final_report,
+            file_name=f"Interview_Report_{st.session_state.session_id}.md",
+            mime="text/markdown"
+        )
     
     if st.session_state.feedback_data:
         data = st.session_state.feedback_data
         if "error" in data:
-            st.error(data["error"])
-            with st.expander("원본 데이터 확인"):
-                st.text(data.get("raw", ""))
+            st.error(f"⚠️ 분석 데이터를 화면에 표시할 수 없습니다: {data['error']}")
+            with st.expander("📝 AI 응답 원본 확인 (디버깅용)"):
+                st.code(data.get("raw", "데이터 없음"), language="json")
+                st.info("위 원본 데이터를 복사해서 알려주시면 문제 해결에 큰 도움이 됩니다.")
         else:
+            # --- 지능형 데이터 추출 및 보정 로직 (강화판) ---
+            def get_any(keys, default_val="-"):
+                """여러 개의 후보 키 중 첫 번째로 발견되는 값을 반환"""
+                for k in keys:
+                    if k in data: return data[k]
+                return default_val
+
+            def extract_feedback_data(prefix, kor_name):
+                # 1. 등급(Score) 추출: 영문/한글 후보 키 모두 검색
+                score_keys = [f"score_{prefix}", f"{prefix}_score", f"{kor_name}_등급", f"{kor_name}_점수", prefix, kor_name]
+                score = get_any(score_keys, "-")
+                
+                # 만약 score에 너무 긴 문장이 들어온 경우 (보정)
+                detail_from_score = None
+                if len(str(score)) > 10:
+                    detail_from_score = score
+                    score = "분석완료"
+                
+                # 2. 상세(Detail) 추출: 영문/한글 후보 키 모두 검색
+                detail_keys = [f"detail_{prefix}", f"{prefix}_detail", f"{kor_name}_상세", f"{kor_name}_분석", f"{kor_name}_설명"]
+                detail = get_any(detail_keys, "")
+                
+                # 3. 보정: 상세가 비어있으면 score에서 넘쳐흐른 문장을 가져옴
+                if (not detail or len(detail) < 5) and detail_from_score:
+                    detail = detail_from_score
+                
+                if not detail: detail = "상세 분석 결과가 생성되지 않았습니다."
+                
+                return str(score), str(detail)
+
+            # 각 항목 데이터 지능형 추출
+            s_clarity, d_clarity = extract_feedback_data("clarity", "명확성")
+            s_evidence, d_evidence = extract_feedback_data("evidence", "근거")
+            s_intent, d_intent = extract_feedback_data("intent", "의도")
+
             # 1. 평가 요약 (Custom Badges)
             st.subheader("✅ 답변 평가 요약")
             m1, m2, m3 = st.columns(3)
-            evals = data.get("evaluation", {})
-            with m1: render_metric_with_badge("명확성", evals.get("clarity", "-"))
-            with m2: render_metric_with_badge("근거 충분성", evals.get("evidence", "-"))
-            with m3: render_metric_with_badge("의도 파악", evals.get("intent_match", "-"))
+            with m1: render_metric_with_badge("명확성", s_clarity)
+            with m2: render_metric_with_badge("근거 충분성", s_evidence)
+            with m3: render_metric_with_badge("의도 파악", s_intent)
             
             st.divider()
 
-            # 2. 탭을 활용한 상세 분석
+            # 2. 상세 분석 및 가이드 (Tabs)
             tab1, tab2, tab3 = st.tabs(["🔍 상세 분석", "💡 교정 가이드", "✨ 모범 답안"])
             
             with tab1:
-                details = data.get("evaluation_detail", {})
-                st.markdown(f"**명확성:** {details.get('clarity', '')}")
-                st.markdown(f"**근거 충분성:** {details.get('evidence', '')}")
-                st.markdown(f"**의도 파악:** {details.get('intent_match', '')}")
+                st.markdown(f"**명확성:** {d_clarity}")
+                st.markdown(f"**근거 충분성:** {d_evidence}")
+                st.markdown(f"**의도 파악:** {d_intent}")
                 
-                if "check_items" in data:
+                # 체크포인트도 지능형 추출
+                check_list = get_any(["check_items", "체크포인트", "핵심_체크포인트"], [])
+                if check_list and isinstance(check_list, list):
                     st.write("---")
                     st.write("**📌 핵심 체크포인트**")
-                    for item in data["check_items"]:
+                    for item in check_list:
                         st.write(f"✅ {item}")
 
             with tab2:
-                st.info(data.get("improvement_guide", "가이드가 없습니다."))
-                st.write("---")
-                st.write("**💡 면접관의 시선**")
-                st.write("지원자의 답변에서 질문의 핵심 의도를 얼마나 파악했는지와 논리적 비약이 없는지를 중점적으로 평가했습니다.")
+                # 가이드도 지능형 추출
+                guide = get_any(["improvement_guide", "교정_가이드", "개선_방안"], "제공된 교정 가이드가 없습니다.")
+                st.info(guide)
 
             with tab3:
-                st.success(data.get("model_answer_direction", "방향 제시가 없습니다."))
+                # 모범답안 지능형 추출
+                m_answer = get_any(["model_answer", "model_answer_direction", "모범_답안", "모범_답변"], "제시된 모범 답안이 없습니다.")
+                st.success(m_answer)
                 st.write("---")
                 st.caption("※ 위 내용은 인공지능이 생성한 가이드라인이며, 실제 본인의 경험을 바탕으로 자연스럽게 수정하여 활용하세요.")
     else:

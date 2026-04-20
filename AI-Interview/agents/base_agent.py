@@ -46,14 +46,12 @@ class BaseAgent:
         env = os.environ.copy()
         env["NODE_TLS_REJECT_UNAUTHORIZED"] = "0"
             
-        # We handle history manually in the engine, so we don't use -r (resume session)
-        # to avoid "Invalid session identifier" errors for new sessions.
         cmd = ["gemini.cmd", "-p", " "]
         if self.model:
             cmd.extend(["-m", self.model])
             
         try:
-            # Direct execution with STDIN injection to bypass shell escape and encoding issues
+            # Direct execution with STDIN injection
             result = subprocess.run(
                 cmd,
                 input=strict_prompt,
@@ -65,7 +63,18 @@ class BaseAgent:
                 env=env,
                 shell=True
             )
-            return result.stdout.strip()
+            
+            # 결과에서 시스템 메시지 라인 제거
+            lines = result.stdout.strip().split('\n')
+            filtered_lines = [
+                l for l in lines 
+                if not (l.startswith("Hook system message:") or 
+                        l.startswith("Loading extension:") or 
+                        l.startswith("Scheduling MCP") or 
+                        l.startswith("Executing MCP") or 
+                        l.startswith("MCP context refresh"))
+            ]
+            return '\n'.join(filtered_lines).strip()
         except subprocess.CalledProcessError as e:
             error_msg = e.stderr.strip() if e.stderr else str(e)
             return f"Error during Gemini CLI call: {error_msg}"
@@ -106,6 +115,13 @@ class BaseAgent:
 
             for line in iter(process.stdout.readline, ''):
                 if line:
+                    # 시스템 메시지 필터링
+                    if line.startswith("Hook system message:") or \
+                       line.startswith("Loading extension:") or \
+                       line.startswith("Scheduling MCP") or \
+                       line.startswith("Executing MCP") or \
+                       line.startswith("MCP context refresh"):
+                        continue
                     yield line
 
             process.stdout.close()
