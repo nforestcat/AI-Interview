@@ -9,6 +9,8 @@ from core.search_utils import SearchUtils
 from core.pdf_parser import PDFParser
 from core.interview_engine import InterviewEngine
 from core.session_manager import SessionManager
+from core.speech_manager import SpeechManager
+import asyncio
 
 # .env 파일 로드
 env_path = ".env"
@@ -115,6 +117,8 @@ if "final_report" not in st.session_state:
     st.session_state.final_report = ""
 if "is_generating_report" not in st.session_state:
     st.session_state.is_generating_report = False
+if "is_speech_mode" not in st.session_state:
+    st.session_state.is_speech_mode = False
 
 def save_current_session():
     """현재 세션 상태를 파일에 저장합니다."""
@@ -180,9 +184,17 @@ with st.sidebar:
         if "engine" not in st.session_state:
             st.session_state.engine = InterviewEngine(model_name='gemma-4-31b-it', session_id=st.session_state.session_id, api_key=api_key)
         engine = st.session_state.engine
+        # SpeechManager 초기화
+        speech_manager = SpeechManager(client)
     else:
         st.warning("API Key를 입력해주세요.")
         st.stop()
+
+    st.divider()
+    st.session_state.is_speech_mode = st.toggle("🎤 음성 면접 모드 사용", value=st.session_state.is_speech_mode)
+
+    if st.session_state.is_speech_mode:
+        st.info("음성 모드에서는 면접관의 질문이 소리로 나오며, 음성으로 답변할 수 있습니다.")
 
     st.divider()
     company_name = st.text_input("지원 기업명", placeholder="예: 삼성전자")
@@ -309,7 +321,18 @@ with col_left:
             st.write(msg["content"])
 
     if st.session_state.is_interview_started and not st.session_state.is_finished:
-        if user_input := st.chat_input("답변을 입력하세요..."):
+        # 음성 입력 처리
+        user_input = None
+        if st.session_state.is_speech_mode:
+            audio_value = st.audio_input("음성으로 답변하기")
+            if audio_value:
+                with st.spinner("음성을 텍스트로 변환 중... (Gemini 3.1 Flash Live)"):
+                    user_input = speech_manager.stt_with_gemini(audio_value.read())
+                    st.info(f"인식된 답변: {user_input}")
+        else:
+            user_input = st.chat_input("답변을 입력하세요...")
+
+        if user_input:
             with st.spinner("분석 및 다음 질문 준비 중..."):
                 # 사용자 답변 주입 및 다음 단계 실행
                 res = engine.step(user_input)
@@ -320,6 +343,14 @@ with col_left:
                 
                 # 분석 결과 가져오기 (Analyst 노드 결과)
                 st.session_state.feedback_data = engine.get_feedback()
+                
+                # 면접관의 질문을 TTS로 재생 (음성 모드인 경우)
+                if st.session_state.is_speech_mode:
+                    question_text = res['question']
+                    with st.spinner("면접관이 말하는 중..."):
+                        audio_path = asyncio.run(speech_manager.generate_tts(question_text))
+                        if audio_path:
+                            st.markdown(speech_manager.get_audio_html(audio_path), unsafe_allow_html=True)
                 
                 if res.get('is_final'):
                     st.session_state.is_finished = True
