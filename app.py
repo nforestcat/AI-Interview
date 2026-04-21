@@ -269,7 +269,9 @@ with col_left:
                     
                     st.session_state.pre_analysis = engine.generate_initial_pool(
                         st.session_state.parsed_resume,
-                        st.session_state.company_info
+                        st.session_state.company_info,
+                        company_name=company_name,
+                        role_name=role_name
                     )
                 save_current_session()
                 st.rerun()
@@ -327,6 +329,36 @@ with col_left:
             st.rerun()
     elif st.session_state.is_finished:
         st.chat_input("면접이 종료되었습니다.", disabled=True)
+        
+        # --- 최종 리포트 생성 및 다운로드 버튼 ---
+        if st.session_state.is_generating_report:
+            with st.spinner("최종 종합 평가 리포트를 생성 중입니다..."):
+                final_report = engine.generate_final_report(
+                    st.session_state.chat_history,
+                    st.session_state.parsed_resume,
+                    st.session_state.company_info
+                )
+                st.session_state.final_report = final_report
+                st.session_state.is_generating_report = False
+                save_current_session()
+        
+        if st.session_state.final_report:
+            st.divider()
+            st.subheader("📝 최종 면접 리포트")
+            st.markdown(st.session_state.final_report)
+            
+            # 다운로드 버튼 추가
+            import datetime
+            now_str = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+            file_name = f"Interview_Report_{company_name}_{role_name}_{now_str}.md"
+            
+            st.download_button(
+                label="📥 리포트 다운로드 (.md)",
+                data=st.session_state.final_report,
+                file_name=file_name,
+                mime="text/markdown",
+                use_container_width=True
+            )
 
 # --- [Column Right] 실시간 분석 및 교정 ---
 with col_right:

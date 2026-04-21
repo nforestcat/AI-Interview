@@ -3,7 +3,7 @@ import os
 from typing import Dict, Any
 
 class SessionManager:
-    def __init__(self, state_dir: str = ".omg/state"):
+    def __init__(self, state_dir: str = ".cache/state"):
         self.state_dir = state_dir
         self.session_file = os.path.join(self.state_dir, "app_session.json")
         self._ensure_dir()

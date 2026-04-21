@@ -3,8 +3,8 @@ import re
 
 class CacheManager:
     def __init__(self):
-        self.company_dir = "company"
-        self.draft_dir = "draft"
+        self.company_dir = ".cache/company"
+        self.draft_dir = ".cache/draft"
         self._ensure_dirs()
 
     def _ensure_dirs(self):

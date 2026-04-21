@@ -9,6 +9,7 @@ from prompts.templates import (
     RESUME_PARSER_PROMPT,
     FINAL_REPORT_PROMPT
 )
+from core.cache_manager import CacheManager
 from agents.base_agent import BaseAgent
 
 logger = get_logger("InterviewEngine")
@@ -24,6 +25,7 @@ class InterviewEngine:
         
         # Initialize LangGraph
         self.graph = create_interview_graph()
+        self.cache_manager = CacheManager()
         
         # Initial State
         self.state = {
@@ -79,9 +81,9 @@ class InterviewEngine:
         except:
             return output
 
-    def generate_initial_pool(self, resume_text: str, company_info: str) -> str:
+    def generate_initial_pool(self, resume_text: str, company_info: str, company_name: str = "Unknown", role_name: str = "Unknown") -> str:
         """지원자 서류와 기업 정보를 분석하여 사전 리포트와 예상 질문을 생성합니다."""
-        logger.info("Generating pre-analysis report...")
+        logger.info(f"Generating pre-analysis report for {company_name}...")
         temp_session = f"pre_analysis_{int(time.time())}"
         analysis_agent = BaseAgent(
             agent_name="Agent_Tech", 
@@ -101,7 +103,22 @@ class InterviewEngine:
         2. **면접 검증 포인트**: 서류에서 기술적/논리적으로 검증이 필요한 핵심 포인트를 짚어주세요.
         3. **예상 질문 리스트**: 각 면접관(Tech, HR, Exec) 관점의 날카로운 질문 10개를 생성하세요.
         """
-        return analysis_agent.ask(prompt)
+        result = analysis_agent.ask(prompt)
+        
+        # 초안 자동 저장 기능 추가
+        try:
+            self.cache_manager.save_draft(
+                company=company_name,
+                role=role_name,
+                q_num="00",
+                keyword="PreAnalysis",
+                content=result
+            )
+            logger.info(f"Pre-analysis report saved to draft for {company_name}")
+        except Exception as e:
+            logger.error(f"Failed to save draft: {e}")
+            
+        return result
 
     def step(self, user_input: str = None) -> Dict[str, Any]:
         """LangGraph 한 단계를 실행합니다."""
