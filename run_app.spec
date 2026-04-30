@@ -1,29 +1,34 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
+# 1. 로컬 리소스 정의
 datas = [('app.py', '.'), ('core', 'core'), ('agents', 'agents'), ('prompts', 'prompts')]
 binaries = []
 hiddenimports = []
-tmp_ret = collect_all('streamlit')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('google.genai')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('langgraph')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('pdfplumber')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('python-dotenv')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('pywebview')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('pythonnet')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('edge_tts')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('aiohttp')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
+# 2. 필수 라이브러리 (requirements.txt 기반 모든 의존성 강제 포함)
+essential_packages = [
+    'streamlit',
+    'google.genai',
+    'langgraph',
+    'webview',       # pywebview
+    'pdfplumber',
+    'dotenv',        # python-dotenv
+    'clr',           # pythonnet
+    'edge_tts',
+    'aiohttp'
+]
 
+for pkg in essential_packages:
+    try:
+        tmp_ret = collect_all(pkg)
+        datas += tmp_ret[0]
+        binaries += tmp_ret[1]
+        hiddenimports += tmp_ret[2]
+    except Exception as e:
+        print(f"Warning: Could not collect all for {pkg}: {e}")
+
+# 3. 분석 및 빌드 설정
 a = Analysis(
     ['run_app.py'],
     pathex=[],
@@ -33,7 +38,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['tkinter', 'matplotlib', 'notebook'],
     noarchive=False,
     optimize=0,
 )
@@ -45,7 +50,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='run_app',
+    name='AI_Interview_Auto',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

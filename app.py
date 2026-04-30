@@ -183,6 +183,9 @@ with st.sidebar:
         # LangGraph Engine 초기화 및 상태 유지
         if "engine" not in st.session_state:
             st.session_state.engine = InterviewEngine(model_name='gemma-4-31b-it', session_id=st.session_state.session_id, api_key=api_key)
+            # 기존 대화 내역이 있다면 엔진 상태에 복구 (새로고침/세션 복구 대응)
+            if st.session_state.chat_history:
+                st.session_state.engine.state["messages"] = st.session_state.chat_history
         engine = st.session_state.engine
         # SpeechManager 초기화
         speech_manager = SpeechManager(client)
@@ -205,14 +208,22 @@ with st.sidebar:
             with st.spinner("최신 기업 정보를 수집 중입니다..."):
                 cached_info = cache_manager.load_company_data(company_name)
                 if cached_info:
-                    st.session_state.company_info = cached_info
+                    # 하위 호환성 처리 (기존 캐시가 문자열인 경우)
+                    if isinstance(cached_info, str):
+                        st.session_state.company_info = cached_info
+                    else:
+                        st.session_state.company_info = search_utils.format_company_info_for_llm(cached_info)
                     st.success("캐시된 정보를 불러왔습니다.")
                 else:
-                    info = search_utils.search_company_info(company_name)
-                    st.session_state.company_info = info
-                    cache_manager.save_company_data(company_name, info)
-                    st.success("정보 검색이 완료되었습니다.")
+                    company_data = search_utils.search_company_info(company_name)
+                    st.session_state.company_info = search_utils.format_company_info_for_llm(company_data)
+                    cache_manager.save_company_data(company_name, company_data)
+                    st.success("정보 검색 및 심층 분석이 완료되었습니다.")
                 save_current_session()
+                
+                # 분석 결과 미리보기 출력 추가
+                with st.expander("🔍 기업 심층 분석 결과"):
+                    st.markdown(st.session_state.company_info)
         else:
             st.error("기업명을 입력해주세요.")
 
@@ -251,25 +262,34 @@ with col_left:
         else:
             uploaded_files = st.file_uploader("이력서 또는 자기소개서 업로드 (여러 파일 선택 가능)", type=["pdf", "txt", "md"], accept_multiple_files=True)
             if uploaded_files:
-                with st.spinner("서류들을 읽어오는 중..."):
+                with st.spinner("서류들을 정밀하게 읽어오는 중..."):
                     combined_text = ""
                     for file in uploaded_files:
+                        combined_text += f"\n\n{'='*20} 파일명: {file.name} {'='*20}\n"
                         if file.type == "application/pdf":
                             # 임시 파일명이 겹치지 않게 처리
-                            temp_filename = f"temp_{file.name}"
+                            import uuid
+                            temp_filename = f"temp_{uuid.uuid4()}_{file.name}"
                             with open(temp_filename, "wb") as f:
                                 f.write(file.getbuffer())
-                            combined_text += f"\n--- [{file.name}] ---\n"
                             combined_text += PDFParser.extract_text(temp_filename)
-                            os.remove(temp_filename)
+                            if os.path.exists(temp_filename):
+                                os.remove(temp_filename)
                         else:
-                            combined_text += f"\n--- [{file.name}] ---\n"
-                            combined_text += file.read().decode("utf-8")
+                            # 텍스트 파일 인코딩 대응 (UTF-8 시도 후 실패 시 CP949 시도)
+                            raw_data = file.read()
+                            try:
+                                combined_text += raw_data.decode("utf-8")
+                            except UnicodeDecodeError:
+                                try:
+                                    combined_text += raw_data.decode("cp949")
+                                except Exception as e:
+                                    combined_text += f"\n[오류] 파일을 읽을 수 없습니다: {str(e)}\n"
                     
-                    st.session_state.resume_text = combined_text
+                    st.session_state.resume_text = combined_text.strip()
                     save_current_session()
-                st.success("📄 모든 서류 텍스트 추출이 완료되었습니다. 아래 '사전 분석' 버튼을 눌러 AI 면접 준비를 시작하세요!")
-                st.rerun() # 업로드 후 상태 반영을 위해 리런
+                st.success("📄 모든 서류 분석이 완료되었습니다. 아래 '사전 분석' 버튼을 눌러주세요!")
+                st.rerun()
     
     if st.session_state.resume_text and st.session_state.company_info and not st.session_state.is_interview_started:
         if not st.session_state.pre_analysis:

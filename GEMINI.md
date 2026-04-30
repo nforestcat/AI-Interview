@@ -14,7 +14,7 @@
 
 \* \*\*Language \& UI Framework\*\*: Python, Streamlit (전작과 동일한 UI 테마/구조 유지)
 
-\* \*\*LLM Core\*\*: Gemini 3.1 Pro Preview (메인 대화 및 피드백 처리용), Gemma 계열 (필요 시 초경량 분류용)
+\* \*\*LLM Core\*\*: 사용자 지정 모델 (메인 대화 및 피드백 처리용), Gemma 계열 (필요 시 초경량 분류용)
 
 \* \*\*Multi-Agent Framework\*\*: OmG (Gemini CLI Extension) - 다중 면접관 상태 유지 및 워크플로우 제어
 

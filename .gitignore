@@ -4,14 +4,30 @@
 # Python cache
 **/__pycache__/
 _pycache_/
+*.pyc
 
 # Local application data & caches
+.cache/
+.gemini/
 company/
 $null
 .env
 *.log
 app_log/
 app_log.log
+
+# IDEs
+.vscode/
+.idea/
+
+# Virtual Environments
+venv/
+venv*/
+
+# PyInstaller / Build
+build/
+dist/
+*.spec
 
 # Development & Planning artifacts
 PRD_MultiAgentTransition.md
@@ -20,6 +36,7 @@ test_gemini.py
 test_subprocess.py
 test_tempfile.py
 verify_agents.py
+temp/
 
 # CLI Output
 output.txt

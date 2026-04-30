@@ -50,7 +50,8 @@ class InterviewEngine:
             "context": {
                 "model_name": self.model_name,
                 "parsed_resume": "",
-                "company_info": ""
+                "company_info": "",
+                "client": self.client
             },
             "interviewer_counts": {},
             "total_count": 0,
@@ -60,6 +61,10 @@ class InterviewEngine:
     def set_context(self, parsed_resume: str, company_info: str):
         self.state["context"]["parsed_resume"] = parsed_resume
         self.state["context"]["company_info"] = company_info
+
+    def set_messages(self, messages: List[Dict[str, Any]]):
+        """외부에서 대화 내역을 주입하여 상태를 동기화합니다."""
+        self.state["messages"] = messages
 
     def parse_resume(self, resume_text: str) -> str:
         """지원자 서류를 JSON 형태의 마스터 프로필로 구조화합니다."""
@@ -130,14 +135,17 @@ class InterviewEngine:
         output = self.graph.invoke(self.state)
         self.state.update(output)
         
-        # 마지막 메시지 (면접관의 질문) 추출
+        # 마지막 메시지 추출
         last_msg = self.state["messages"][-1]
+        
+        # 면접 종료 조건: 질문이 6회 이상이고, 마지막 메시지가 사용자 답변일 때 (또는 시스템의 종료 메시지일 때)
+        is_final = self.state["total_count"] >= 6 and (last_msg.get("role") == "user" or last_msg.get("name") == "시스템")
         
         return {
             "interviewer": self.state["current_agent"],
             "question": last_msg["content"],
             "count": self.state["interviewer_counts"].get(self.state["current_agent"], 0),
-            "is_final": self.state["total_count"] >= 6
+            "is_final": is_final
         }
 
     def get_feedback(self) -> Dict[str, Any]:

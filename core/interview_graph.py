@@ -71,7 +71,7 @@ def interviewer_node(state: InterviewState):
     
     # contents가 비어있으면 에러 방지
     if not contents:
-        contents = "면접을 시작합니다. 지원자에게 첫 질문을 던져주세요."
+        contents = [{"role": "user", "parts": [{"text": "면접을 시작합니다. 지원자에게 첫 질문을 던져주세요."}]}]
     
     current_agent_count = state['interviewer_counts'].get(agent_name, 0)
     is_follow_up = (current_agent_count == 1)
@@ -81,22 +81,30 @@ def interviewer_node(state: InterviewState):
     else:
         prompt_suffix = f"\n[상황] 당신의 차례입니다. 지원자 서류와 이전 대화 맥락을 고려하여 새로운 메인 질문을 던지세요."
 
-    try:
-        response = client.models.generate_content(
-            model=model_name,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=persona + prompt_suffix,
-                temperature=0.7,
+    # 지수 백오프를 이용한 재시도 로직
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=persona + prompt_suffix,
+                    temperature=0.7,
+                )
             )
-        )
-    except Exception as e:
-        return {
-            "messages": [{"role": "assistant", "content": f"질문 생성 중 오류가 발생했습니다: {str(e)}", "name": agent_name}],
-            "interviewer_counts": state['interviewer_counts'],
-            "total_count": state['total_count'],
-            "current_agent": agent_name
-        }
+            # 성공 시 루프 탈출
+            break
+        except Exception as e:
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt) # 1, 2, 4초 대기
+                continue
+            return {
+                "messages": [{"role": "assistant", "content": f"질문 생성 중 지속적인 오류가 발생했습니다(500). 잠시 후 다시 시도해 주세요. 상세: {str(e)}", "name": agent_name}],
+                "interviewer_counts": state['interviewer_counts'],
+                "total_count": state['total_count'],
+                "current_agent": agent_name
+            }
     
     new_message = {"role": "assistant", "content": response.text, "name": agent_name}
     
@@ -163,10 +171,17 @@ def analyst_node(state: InterviewState):
     except:
         return {}
 
+def closing_node(state: InterviewState):
+    """면접 종료 메시지를 생성하는 노드"""
+    return {
+        "messages": [{"role": "assistant", "content": "준비한 모든 질문이 끝났습니다. 오늘 면접에 응해주셔서 감사합니다. 잠시만 기다려 주시면 종합 평가 리포트를 생성하겠습니다.", "name": "시스템"}],
+        "is_finished": True
+    }
+
 # 3. 라우팅 로직
 def router(state: InterviewState):
     """면접 지속 여부 및 다음 면접관 결정"""
-    # 총 질문 6회 완료 시 종료
+    # 총 질문 6회 완료 시 종료 노드로 이동
     if state['total_count'] >= 6:
         return "end"
     
@@ -183,6 +198,7 @@ def create_interview_graph():
     
     workflow.add_node("interviewer", interviewer_node)
     workflow.add_node("analyst", analyst_node)
+    workflow.add_node("closing", closing_node)
     
     def switch_agent(state: InterviewState):
         agents = ["Agent_Tech", "Agent_HR", "Agent_Exec"]
@@ -203,14 +219,17 @@ def create_interview_graph():
         {
             "continue": "interviewer",
             "switch": "interviewer_switch",
-            "end": END
+            "end": "closing"
         }
     )
 
     # 3. 면접관 교체 후 질문 생성 노드로 이동
     workflow.add_edge("interviewer_switch", "interviewer")
     
-    # 4. ✨ 핵심 포인트: 질문을 하나 생성했으면 그래프 실행을 종료하고 UI(사용자 입력 대기)로 돌아감
+    # 4. 질문 생성 후 종료 (사용자 입력 대기)
     workflow.add_edge("interviewer", END)
+    
+    # 5. 종료 노드 실행 후 진짜 종료
+    workflow.add_edge("closing", END)
     
     return workflow.compile()
